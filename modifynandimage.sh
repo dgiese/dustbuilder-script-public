@@ -7,18 +7,44 @@ FLAG_DIR="."
 IMG_DIR="./squashfs-root"
 FEATURES_DIR="./features"
 
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    echo "WARNING: Unsupported OS, image generation might fail or create bad images. Do not proceed if you are not sure what you are doing"
+    echo "press CTRL+C to abort"
+    sleep 5
+fi
+
+command -v unzip >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v unsquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v mksquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v install >/dev/null 2>&1 || { echo "ERROR: install command not found, aborting"; exit 1; }
+command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum command not found, aborting"; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "ERROR: git command not found, aborting"; exit 1; }
+
 if [ ! -f $BASE_DIR/firmware.zip ]; then
-    echo "File firmware.zip not found! Decryption and unpacking was apparently unsuccessful."
+    echo "ERROR: File firmware.zip not found! Decryption and unpacking was apparently unsuccessful."
+	echo "please create zip file that contains rootfs.img, boot.img and mcu.bin. Make sure that the files are compatible with your device"
     exit 1
 fi
 
 if [ ! -f $BASE_DIR/authorized_keys ]; then
-    echo "authorized_keys not found"
+    echo "ERROR: authorized_keys not found. Please create your authorized_keys file first (it contains the public portion of your ssh key, likely starting with ssh-rsa)."
     exit 1
 fi
 
 if [ ! -f $FLAG_DIR/devicetype ]; then
-    echo "devicetype definition not found, aborting"
+    echo "ERROR: devicetype definition not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
+    exit 1
+fi
+
+if [ ! -f $FLAG_DIR/jobid ]; then
+    echo "ERROR: jobid not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
+    exit 1
+fi
+
+if [ ! -d $FEATURES_DIR ]; then
+    echo "ERROR: Features directory not found. You might want to clone the repo from https://github.com/dgiese/dustbuilder-features to ${FEATURES_DIR}, aborting"
     exit 1
 fi
 
@@ -82,6 +108,11 @@ if [ -f $FLAG_DIR/adbd ]; then
     install -m 0755 $FEATURES_DIR/adbd $IMG_DIR/usr/bin/adbd
 fi
 
+echo "replace tcpdump"
+echo "#!/bin/sh" > $IMG_DIR/usr/sbin/tcpdump
+echo "exit 0" >> $IMG_DIR/usr/sbin/tcpdump
+
+
 #echo "install iptables modules"
 #    mkdir -p $IMG_DIR/lib/xtables/
 #    cp $FEATURES_DIR/iptables/xtables/*.* $IMG_DIR/lib/xtables/
@@ -91,6 +122,12 @@ fi
 if [ -f $FLAG_DIR/tools ]; then
     echo "installing tools"
     cp -r $FEATURES_DIR/rr_tools/root-dir/* $IMG_DIR/
+fi
+
+# minimal tool package for S7 as the firmware is to fat
+if [ -f $FLAG_DIR/tools_min ]; then
+    echo "installing minimal tools"
+    cp -r $FEATURES_DIR/rr_tools_minimal/root-dir/* $IMG_DIR/
 fi
 
 if [ -f $FLAG_DIR/patch_logging ]; then
@@ -158,23 +195,54 @@ if [ -f $FLAG_DIR/version ]; then
 fi
 echo "" >> $IMG_DIR/build.txt
 
+if [ -f $FLAG_DIR/jobmd5 ]; then
+        touch $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/version >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/devicetypealias >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobid >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobkey >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobmd5 >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+fi
+
 echo "finished patching, repacking"
 
 mksquashfs $IMG_DIR/ rootfs_tmp.img -noappend -root-owned -comp gzip -b 128k
 rm -rf $IMG_DIR
 dd if=$BASE_DIR/rootfs_tmp.img of=$BASE_DIR/rootfs.img bs=128k conv=sync
 rm $BASE_DIR/rootfs_tmp.img
+
+if [ -f $FLAG_DIR/vanilla ]; then
+	echo "vanilla mode, purge rootfs, use template"
+	rm $BASE_DIR/rootfs.img
+	cp $FLAG_DIR/rootfs.img.template $BASE_DIR/rootfs.img
+fi
+
 md5sum ./*.img > $BASE_DIR/firmware.md5sum
 
+
+
 echo "check image file size"
+# S5 Max
 if [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.s5e" ]; then
 	echo "s5e"
 	maximumsize=26214400
 	minimumsize=20000000
+# Roborock S6 Pure
 elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a08" ]; then
     echo "a08"
 	maximumsize=24117248
 	minimumsize=20000000
+# Roborock S7
+elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a15" ]; then
+    echo "a15"
+	maximumsize=24117248
+	minimumsize=20000000
+# Roborock S4 Max
 elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a19" ]; then
     echo "a19"
 	maximumsize=24117248
@@ -188,11 +256,19 @@ fi
 actualsize=$(wc -c < $BASE_DIR/rootfs.img)
 if [ "$actualsize" -gt "$maximumsize" ]; then
 	echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash."
+	echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash." > $BASE_DIR/output/error.txt
+        echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
+	echo $actualsize >> $BASE_DIR/output/error.txt
+	echo $maximumsize >> $BASE_DIR/output/error.txt
 	exit 1
 fi
 
 if [ "$actualsize" -le "$minimumsize" ]; then
 	echo "(!!!) rootfs.img looks to small. Maybe something went wrong with the image generation."
+        echo "(!!!) rootfs.img looks to small. Maybe something went wrong with the image generation." > $BASE_DIR/output/error.txt
+        echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
+        echo $actualsize >> $BASE_DIR/output/error.txt
+        echo $maximumsize >> $BASE_DIR/output/error.txt
 	exit 1
 fi
 
@@ -206,10 +282,13 @@ echo "${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz" > $BASE_DIR/filename.txt
 touch $BASE_DIR/server.txt
 
 if [ -f $FLAG_DIR/diff ]; then
-	echo "unpack original"
-	unsquashfs -d $BASE_DIR/original $BASE_DIR/rootfs.img.template
-	echo "unpack modified"
-	unsquashfs -d $BASE_DIR/modified $BASE_DIR/rootfs.img
+	echo "--------------"
+        echo "unpack original"
+        unsquashfs -d $BASE_DIR/original $BASE_DIR/rootfs.img.template
+        rm -rf $BASE_DIR/original/dev
+        echo "unpack modified"
+        unsquashfs -d $BASE_DIR/modified $BASE_DIR/rootfs.img
+        rm -rf $BASE_DIR/modified/dev
 
 	/usr/bin/git diff --no-index $BASE_DIR/original/ $BASE_DIR/modified/ > $BASE_DIR/output/diff.txt
 	rm -rf $BASE_DIR/original

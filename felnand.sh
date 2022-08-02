@@ -7,23 +7,49 @@ FLAG_DIR="."
 IMG_DIR="./payload"
 FEATURES_DIR="./features"
 
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    echo "WARNING: Unsupported OS, image generation might fail or create bad images. Do not proceed if you are not sure what you are doing"
+    echo "press CTRL+C to abort"
+    sleep 5
+fi
+
+command -v unzip >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v unsquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v mksquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v install >/dev/null 2>&1 || { echo "ERROR: install command not found, aborting"; exit 1; }
+command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum command not found, aborting"; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "ERROR: git command not found, aborting"; exit 1; }
+
 if [ ! -f $BASE_DIR/firmware.zip ]; then
-    echo "File firmware.zip not found! Decryption and unpacking was apparently unsuccessful."
+    echo "ERROR: File firmware.zip not found! Decryption and unpacking was apparently unsuccessful."
+	echo "please create zip file that contains rootfs.img, boot.img and mcu.bin. Make sure that the files are compatible with your device"
     exit 1
 fi
 
 if [ ! -f $BASE_DIR/authorized_keys ]; then
-    echo "authorized_keys not found"
+    echo "ERROR: authorized_keys not found. Please create your authorized_keys file first (it contains the public portion of your ssh key, likely starting with ssh-rsa)."
     exit 1
 fi
 
 if [ ! -f $FLAG_DIR/devicetype ]; then
-    echo "devicetype definition not found, aborting"
+    echo "ERROR: devicetype definition not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
     exit 1
 fi
 
 if [ ! -f $FLAG_DIR/jobid ]; then
-    echo "jobid not found, aborting"
+    echo "ERROR: jobid not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
+    exit 1
+fi
+
+if [ ! -d $FEATURES_DIR ]; then
+    echo "ERROR: Features directory not found. You might want to clone the repo from https://github.com/dgiese/dustbuilder-features to ${FEATURES_DIR}, aborting"
+    exit 1
+fi
+
+if [ ! -d $FEATURES_DIR/felnand ]; then
+    echo "ERROR: felnand directory not found. You might want to clone the repo to ${FEATURES_DIR}, aborting"
     exit 1
 fi
 
@@ -37,15 +63,22 @@ mkdir -p $BASE_DIR/output
 mkdir -p $BASE_DIR/kernel
 
 cp -r $FEATURES_DIR/felnand/_initrd $IMG_DIR
+mkdir -p $IMG_DIR/default
 mkdir -p $IMG_DIR/dev
 mkdir -p $IMG_DIR/sys
 mkdir -p $IMG_DIR/proc
 mkdir -p $IMG_DIR/tmp
+chmod 777 $IMG_DIR/default
 chmod 777 $IMG_DIR/dev
 chmod 777 $IMG_DIR/sys
 chmod 777 $IMG_DIR/proc
 chmod 777 $IMG_DIR/tmp
 
+
+if [ -f $FLAG_DIR/authcode_delta_728 ]; then
+    echo "AUTH CODE DELTA"
+    cp -r $FEATURES_DIR/felnand/_s5e_fix/* $IMG_DIR
+fi
 
 echo "integrate SSH authorized_keys"
 cat $BASE_DIR/authorized_keys > $IMG_DIR/authorized_keys

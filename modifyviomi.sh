@@ -7,18 +7,43 @@ FLAG_DIR="."
 IMG_DIR="./CRL200S-OTA/target_sys/squashfs-root"
 FEATURES_DIR="./features"
 
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    echo "WARNING: Unsupported OS, image generation might fail or create bad images. Do not proceed if you are not sure what you are doing"
+    echo "press CTRL+C to abort"
+    sleep 5
+fi
+
+command -v unzip >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v unsquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v mksquashfs >/dev/null 2>&1 || { echo "ERROR: unzip command not found, aborting"; exit 1; }
+command -v install >/dev/null 2>&1 || { echo "ERROR: install command not found, aborting"; exit 1; }
+command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum command not found, aborting"; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "ERROR: git command not found, aborting"; exit 1; }
+
 if [ ! -f $BASE_DIR/upd_viomi.vacuum.v6.bin ]; then
-    echo "File upd_viomi.vacuum.v6.bin not found! Decryption and unpacking was apparently unsuccessful."
+    echo "ERROR: File upd_viomi.vacuum.v6.bin not found! Decryption and unpacking was apparently unsuccessful."
     exit 1
 fi
 
 if [ ! -f $BASE_DIR/authorized_keys ]; then
-    echo "authorized_keys not found"
+    echo "ERROR: authorized_keys not found. Please create your authorized_keys file first (it contains the public portion of your ssh key, likely starting with ssh-rsa)."
     exit 1
 fi
 
 if [ ! -f $FLAG_DIR/devicetype ]; then
-    echo "devicetype definition not found, aborting"
+    echo "ERROR: devicetype definition not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
+    exit 1
+fi
+
+if [ ! -f $FLAG_DIR/jobid ]; then
+    echo "ERROR: jobid not found, aborting"
+    echo "you likely want to set the flags manually or by running _buildflags.sh from dustbuilder"
+    exit 1
+fi
+
+if [ ! -d $FEATURES_DIR ]; then
+    echo "ERROR: Features directory not found. You might want to clone the repo from https://github.com/dgiese/dustbuilder-features to ${FEATURES_DIR}, aborting"
     exit 1
 fi
 
@@ -125,12 +150,12 @@ if [ -f $FLAG_DIR/livesuit ]; then
 		cp $BASE_DIR/livesuitimage/sys_partition_reset.fex $BASE_DIR/livesuitimage/sys_partition.fex
 	fi
 	cp $BASE_DIR/ramdisk_sys/boot_initramfs.img $BASE_DIR/livesuitimage/recovery.fex
-	./tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/empty.fex $BASE_DIR/livesuitimage/Vempty.fex
-	./tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/boot.fex $BASE_DIR/livesuitimage/Vboot.fex
-	./tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/rootfs.fex $BASE_DIR/livesuitimage/Vrootfs.fex
-	./tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/recovery.fex $BASE_DIR/livesuitimage/Vrecovery.fex
-	./tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/boot-resource.fex $BASE_DIR/livesuitimage/Vboot-resource.fex
-	./tools/pack-bintools/dragon $BASE_DIR/livesuitimage/image.cfg
+	$FEATURES_DIR/../tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/empty.fex $BASE_DIR/livesuitimage/Vempty.fex
+	$FEATURES_DIR/../tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/boot.fex $BASE_DIR/livesuitimage/Vboot.fex
+	$FEATURES_DIR/../tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/rootfs.fex $BASE_DIR/livesuitimage/Vrootfs.fex
+	$FEATURES_DIR/../tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/recovery.fex $BASE_DIR/livesuitimage/Vrecovery.fex
+	$FEATURES_DIR/../tools/pack-bintools/FileAddSum $BASE_DIR/livesuitimage/boot-resource.fex $BASE_DIR/livesuitimage/Vboot-resource.fex
+	$FEATURES_DIR/../tools/pack-bintools/dragon $BASE_DIR/livesuitimage/image.cfg
 	mv $BASE_DIR/livesuitimage/FILELIST $BASE_DIR/output/${DEVICETYPE}_livesuitimage.img
 	md5sum $BASE_DIR/output/${DEVICETYPE}_livesuitimage.img > $BASE_DIR/output/md5.txt
 	echo "${DEVICETYPE}_livesuitimage.img" > $BASE_DIR/filename.txt
@@ -152,7 +177,7 @@ if [ -f $FLAG_DIR/diff ]; then
 	tar -xzvf $BASE_DIR/original/CRL200S-OTA/target_sys.tar.gz -C $BASE_DIR/original/CRL200S-OTA/
 	unsquashfs -d $BASE_DIR/original/CRL200S-OTA/target_sys/squashfs-root $BASE_DIR/original/CRL200S-OTA/target_sys/rootfs.img
 	rm -rf $BASE_DIR/original/CRL200S-OTA/target_sys/squashfs-root/dev
-	rm -rf $BASE_DIR/original/CRL200S-OTA/ramdisk_sys*	
+	rm -rf $BASE_DIR/original/CRL200S-OTA/ramdisk_sys*
 
 	mkdir $BASE_DIR/modified
         mkdir -p $BASE_DIR/modified/CRL200S-OTA/target_sys/

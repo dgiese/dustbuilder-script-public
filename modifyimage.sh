@@ -7,18 +7,40 @@ FLAG_DIR="."
 IMG_DIR="./image"
 FEATURES_DIR="./features"
 
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: you are not root. We can not use mount and change specific file permissions, aborting."
+	exit 1
+fi
+
+if [[ "$OSTYPE" != "linux-gnu"* ]]; then
+    echo "WARNING: Unsupported OS, image generation might fail or create bad images. Do not proceed if you are not sure what you are doing"
+    echo "press CTRL+C to abort"
+    sleep 5
+fi
+
+command -v chroot >/dev/null 2>&1 || { echo "ERROR: chroot command not found, aborting"; exit 1; }
+command -v ccrypt >/dev/null 2>&1 || { echo "ERROR: ccrypt command not found, aborting"; exit 1; }
+command -v install >/dev/null 2>&1 || { echo "ERROR: install command not found, aborting"; exit 1; }
+command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum command not found, aborting"; exit 1; }
+command -v git >/dev/null 2>&1 || { echo "ERROR: git command not found, aborting"; exit 1; }
+
 if [ ! -f $BASE_DIR/disk.img ]; then
-    echo "File disk.img not found! Decryption and unpacking was apparently unsuccessful."
+    echo "ERROR: File disk.img not found! Decryption and unpacking was apparently unsuccessful."
     exit 1
 fi
 
 if [ ! -f $BASE_DIR/authorized_keys ]; then
-    echo "authorized_keys not found"
+    echo "ERROR: authorized_keys not found"
     exit 1
 fi
 
 if [ ! -f $FLAG_DIR/devicetype ]; then
-    echo "devicetype definition not found, aborting"
+    echo "ERROR: devicetype definition not found, aborting"
+    exit 1
+fi
+
+if [ ! -d $FEATURES_DIR ]; then
+    echo "ERROR: Features directory not found. You might want to clone the repo from https://github.com/dgiese/dustbuilder-features to ${FEATURES_DIR}, aborting"
     exit 1
 fi
 
@@ -33,12 +55,12 @@ mkdir -p $BASE_DIR/output
 mkdir $BASE_DIR/image
 mount -o loop disk.img $BASE_DIR/image
 if [ ! -f $IMG_DIR/etc/fstab ]; then
-    echo "File fstab not found. Mounting was apparently unsuccessful."
+    echo "ERROR: File fstab not found. Mounting was apparently unsuccessful."
     exit 1
 fi
 
 if [ ! -f $BASE_DIR/ssh_host_rsa_key ]; then
-    echo "RSA hostkey not found."
+    echo "ERROR: RSA hostkey not found."
     exit 1
 fi
 
@@ -334,6 +356,20 @@ if [ -f $FLAG_DIR/version ]; then
     cat $FLAG_DIR/version >> $IMG_DIR/build.txt
 fi
 echo "" >> $IMG_DIR/build.txt
+
+if [ -f $FLAG_DIR/jobmd5 ]; then
+        touch $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/version >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/devicetypealias >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobid >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobkey >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+        cat $FLAG_DIR/jobmd5 >> $IMG_DIR/dustbuilder.txt
+        echo "" >> $IMG_DIR/dustbuilder.txt
+fi
 
 echo "fixing executable permissions"
 chmod +x $IMG_DIR/usr/bin/*
