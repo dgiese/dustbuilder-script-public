@@ -144,7 +144,9 @@ fi
 
 echo "backdooring"
 sed -i -E 's/::respawn:\/usr\/bin\/getty.sh//g' $IMG_DIR/etc/inittab
-sed -i -E 's/Put a getty on the serial port/\n::respawn:-\/bin\/sh/g' $IMG_DIR/etc/inittab
+sed -i -E 's/Put a getty on the serial port/\n::respawn:-\/sbin\/getty -n -l \/bin\/dustshell 115200 -L ttyS0/g' $IMG_DIR/etc/inittab
+echo -e "#!/bin/sh\n/bin/login -f root" > $IMG_DIR/bin/dustshell
+chmod +x $IMG_DIR/bin/dustshell
 
 if [ -f $FLAG_DIR/valetudo ]; then
 	echo "copy valetudo"
@@ -216,6 +218,9 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 	sed -i 's/-oDISABLE_PSM//' $IMG_DIR/etc/rc.d/miio.sh
 	sed -i 's/set_change_user() {/set_change_user() { \n     return 0\n/' $IMG_DIR/ava/script/msg_cvt.sh
 	sed -i "s/307545464D4D757233624A4261696A7A\"/307545464D4D757233624A4261696A7A\"\n    avacmd msg_cvt '{\"type\":\"msgCvt\",\"cmd\":\"nation_matched\",\"result\":\"matched\"}' \&\n    return 0\n/" $IMG_DIR/ava/script/msg_cvt.sh
+
+        #Disable encryption of FDS uploads (if enabled)
+        sed -i -E 's/ENC_FILE=yes/ENC_FILE=nah/g' $IMG_DIR/ava/lib/*
 fi
 
 if [ -f $FLAG_DIR/miio_target ]; then
@@ -269,8 +274,8 @@ if [ -f $FEATURES_DIR/fwinstaller_1c/sanitize.sh ]; then
 fi
 
 touch $IMG_DIR/build.txt
-echo "build with firmwarebuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
-date -u  >> $IMG_DIR/build.txt
+echo "built with dustbuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
+date -u +"%Y-%m-%dT%H:%M:%SZ"  >> $IMG_DIR/build.txt
 if [ -f $FLAG_DIR/version ]; then
     cat $FLAG_DIR/version >> $IMG_DIR/build.txt
 fi
@@ -318,21 +323,13 @@ if [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.mc1808" ]; then
 	maximumsize=50000000
 	minimumsize=21000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2009" ]; then
-    echo "p2009"
+    	echo "p2009"
 	maximumsize=30000000
 	minimumsize=20000000
-elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2029" ]; then
-    echo "p2029"
-	maximumsize=44000000
-	minimumsize=30000000
-elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2028" ]; then
-    echo "p2028"
-	maximumsize=44000000
-	minimumsize=30000000
-elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2041" ]; then
-    echo "p2041"
-	maximumsize=56000000
-	minimumsize=40000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2216" ]; then
+	echo "r2216"
+        maximumsize=50000000
+        minimumsize=29000000
 else
 	echo "all others"
 	maximumsize=30000000
@@ -369,7 +366,13 @@ fi
 		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install-manual.sh
 		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install-manual.sh
 		chmod +x install-manual.sh
-		tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl
+                if [ -f $BASE_DIR/UI.bin ]; then
+                        tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl $BASE_DIR/ui_md5sum $BASE_DIR/UI.bin
+                elif [ -f $BASE_DIR/UIMA.bin ]; then
+                        tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl $BASE_DIR/ui_md5sum $BASE_DIR/UI*.bin
+                else
+                        tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl
+                fi
 	else
 		sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1c/install.sh > $BASE_DIR/install.sh
 		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
@@ -379,7 +382,13 @@ fi
 		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install-manual.sh
 		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install-manual.sh
 		chmod +x install-manual.sh
-		tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh
+		if [ -f $BASE_DIR/UI.bin ]; then
+			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/ui_md5sum $BASE_DIR/UI.bin
+		elif [ -f $BASE_DIR/UIMA.bin ]; then
+			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/ui_md5sum $BASE_DIR/UI*.bin
+		else
+			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh
+		fi
 	fi
 	md5sum $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz > $BASE_DIR/output/md5.txt
 	echo "${DEVICETYPE}_fw.tar.gz" > $BASE_DIR/filename.txt

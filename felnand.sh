@@ -75,16 +75,22 @@ chmod 777 $IMG_DIR/proc
 chmod 777 $IMG_DIR/tmp
 
 
-if [ -f $FLAG_DIR/authcode_delta_728 ]; then
-    echo "AUTH CODE DELTA"
+if [ -f $FLAG_DIR/fix_boot ]; then
+    echo "Fix Boot partitions"
     cp -r $FEATURES_DIR/felnand/_s5e_fix/* $IMG_DIR
 fi
+
+if [ -f $FLAG_DIR/fel_shell ]; then
+    echo "Using FEL shell"
+    cp -r $FEATURES_DIR/felnand/_fel_shell/* $IMG_DIR
+fi
+
 
 echo "integrate SSH authorized_keys"
 cat $BASE_DIR/authorized_keys > $IMG_DIR/authorized_keys
 cat $BASE_DIR/jobid > $IMG_DIR/id
 
-sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/felnand/_initrd/patch.sh > $IMG_DIR/patch.sh
+sed -i "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $IMG_DIR/patch.sh
 chmod +x $IMG_DIR/patch.sh
 
 echo "create rootfs.cpio"

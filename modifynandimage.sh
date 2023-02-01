@@ -57,6 +57,13 @@ mkdir -p $BASE_DIR/output
 
 unzip $BASE_DIR/firmware.zip
 mv $BASE_DIR/rootfs.img $BASE_DIR/rootfs.img.template
+COMPRESSION=$(unsquashfs -s $BASE_DIR/rootfs.img.template | grep 'Compression ' | sed 's/Compression //')
+echo "compression mode:"
+echo $COMPRESSION
+if [ -z "$COMPRESSION" ]
+then
+      COMPRESSION="gzip"
+fi
 unsquashfs -d $IMG_DIR $BASE_DIR/rootfs.img.template
 mkdir -p $IMG_DIR/etc/dropbear
 chown root:root $IMG_DIR/etc/dropbear
@@ -188,8 +195,8 @@ install -m 0755 $FEATURES_DIR/fwinstaller_nand/_root.sh.tpl $IMG_DIR/root/_root.
 install -m 0755 $FEATURES_DIR/fwinstaller_nand/how_to_modify.txt $IMG_DIR/root/how_to_modify.txt
 
 touch $IMG_DIR/build.txt
-echo "build with firmwarebuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
-date -u  >> $IMG_DIR/build.txt
+echo "built with dustbuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
+date -u +"%Y-%m-%dT%H:%M:%SZ"  >> $IMG_DIR/build.txt
 if [ -f $FLAG_DIR/version ]; then
     cat $FLAG_DIR/version >> $IMG_DIR/build.txt
 fi
@@ -211,7 +218,7 @@ fi
 
 echo "finished patching, repacking"
 
-mksquashfs $IMG_DIR/ rootfs_tmp.img -noappend -root-owned -comp gzip -b 128k
+mksquashfs $IMG_DIR/ rootfs_tmp.img -noappend -root-owned -comp $COMPRESSION -b 128k
 rm -rf $IMG_DIR
 dd if=$BASE_DIR/rootfs_tmp.img of=$BASE_DIR/rootfs.img bs=128k conv=sync
 rm $BASE_DIR/rootfs_tmp.img
@@ -247,8 +254,13 @@ elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a19" ]; then
     echo "a19"
 	maximumsize=24117248
 	minimumsize=20000000
+# Roborock Q7 Max
+elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a38" ]; then
+    echo "a38"
+        maximumsize=24117248
+        minimumsize=20000000
 else
-	echo "all others"
+    echo "all others"
 	maximumsize=24117248
 	minimumsize=20000000
 fi
@@ -276,7 +288,7 @@ sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller
 sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
 sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install.sh
 chmod +x install.sh
-tar -czf $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz $BASE_DIR/rootfs.img $BASE_DIR/boot.img $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh
+tar -czf $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz $BASE_DIR/rootfs.img $BASE_DIR/boot.img $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $FEATURES_DIR/fwinstaller_nand/unsquashfs
 md5sum $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz > $BASE_DIR/output/md5.txt
 echo "${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz" > $BASE_DIR/filename.txt
 touch $BASE_DIR/server.txt

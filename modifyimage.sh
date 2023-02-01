@@ -252,6 +252,10 @@ if [ -f $FLAG_DIR/valetudo ]; then
     cat $FEATURES_DIR/valetudo/deployment/etc/rc.local >> $IMG_DIR/etc/rc.local
     echo >> $IMG_DIR/etc/rc.local
     echo "exit 0" >> $IMG_DIR/etc/rc.local
+
+    echo "net.ipv6.conf.all.disable_ipv6 = 1" >> $IMG_DIR/etc/sysctl.conf
+    echo "net.ipv6.conf.default.disable_ipv6 = 1" >> $IMG_DIR/etc/sysctl.conf
+
     touch $FLAG_DIR/patch_logging
 fi
 
@@ -350,8 +354,8 @@ echo "patching Timezone"
 fi
 
 touch $IMG_DIR/build.txt
-echo "build with firmwarebuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
-date -u  >> $IMG_DIR/build.txt
+echo "built with dustbuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
+date -u +"%Y-%m-%dT%H:%M:%SZ"  >> $IMG_DIR/build.txt
 if [ -f $FLAG_DIR/version ]; then
     cat $FLAG_DIR/version >> $IMG_DIR/build.txt
 fi

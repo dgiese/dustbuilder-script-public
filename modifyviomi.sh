@@ -20,8 +20,8 @@ command -v install >/dev/null 2>&1 || { echo "ERROR: install command not found, 
 command -v md5sum >/dev/null 2>&1 || { echo "ERROR: md5sum command not found, aborting"; exit 1; }
 command -v git >/dev/null 2>&1 || { echo "ERROR: git command not found, aborting"; exit 1; }
 
-if [ ! -f $BASE_DIR/upd_viomi.vacuum.v6.bin ]; then
-    echo "ERROR: File upd_viomi.vacuum.v6.bin not found! Decryption and unpacking was apparently unsuccessful."
+if [ ! -f $BASE_DIR/upd_viomi.bin ]; then
+    echo "ERROR: File upd_viomi.bin not found! Decryption and unpacking was apparently unsuccessful."
     exit 1
 fi
 
@@ -52,7 +52,7 @@ FRIENDLYDEVICETYPE=$(cat "$FLAG_DIR/devicetype")
 
 mkdir -p $BASE_DIR/output
 
-tar -xzvf $BASE_DIR/upd_viomi.vacuum.v6.bin -C $BASE_DIR/
+tar -xzvf $BASE_DIR/upd_viomi.bin -C $BASE_DIR/
 tar -xzvf $BASE_DIR/CRL200S-OTA/target_sys.tar.gz -C $BASE_DIR/CRL200S-OTA/
 unsquashfs -d $IMG_DIR $BASE_DIR/CRL200S-OTA/target_sys/rootfs.img
 rm $BASE_DIR/CRL200S-OTA/target_sys/rootfs.img
@@ -74,8 +74,10 @@ chmod 600 $IMG_DIR/etc/dropbear/authorized_keys
 chown root:root $IMG_DIR/root -R
 
 install -m 0755 $FEATURES_DIR/viomi_tools/root-dir/usr/sbin/dropbear $IMG_DIR/usr/sbin/dropbear
+install -m 0755 $FEATURES_DIR/viomi_tools/root-dir/usr/sbin/dropbearmulti $IMG_DIR/usr/sbin/dropbearmulti
 
 ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/dbclient
+ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/ssh
 ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/scp
 ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/dropbearkey
 
@@ -85,6 +87,7 @@ install -m 0755 $FEATURES_DIR/dropbear_viomi/config/dropbear $IMG_DIR/etc/config
 ln -s ../init.d/dropbear $IMG_DIR/etc/rc.d/S50dropbear
 ln -s ../init.d/dropbear $IMG_DIR/etc/rc.d/K50dropbear
 
+# disable disabling of adbd
 sed -i -E 's/echo 0/echo 1/g' $IMG_DIR/usr/sbin/RobotApp
 
 echo "backdooring"
@@ -112,11 +115,56 @@ echo "if [[ -f /mnt/UDISK/_root.sh ]]; then" >> $IMG_DIR/etc/rc.local
 echo "    /mnt/UDISK/_root.sh &" >> $IMG_DIR/etc/rc.local
 echo "fi" >> $IMG_DIR/etc/rc.local
 echo "exit 0" >> $IMG_DIR/etc/rc.local
+mkdir $IMG_DIR/misc
+install -m 0755 $FEATURES_DIR/fwinstaller_viomi/_root.sh.tpl $IMG_DIR/misc/_root.sh.tpl
+install -m 0644 $FEATURES_DIR/fwinstaller_viomi/how_to_modify.txt $IMG_DIR/misc/how_to_modify.txt
 
-touch $IMG_DIR/build.txt
-echo "build with firmwarebuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
-date -u  >> $IMG_DIR/build.txt
-echo "" >> $IMG_DIR/build.txt
+# For robots such as the conga 3790, we need a different wifi driver module
+mkdir -p $IMG_DIR/opt/8821cs/
+install -m 0755 $FEATURES_DIR/fwinstaller_viomi/8821cs_patched.ko $IMG_DIR/opt/8821cs/8821cs_patched.ko
+install -m 0755 $FEATURES_DIR/fwinstaller_viomi/enable_8821cs.sh $IMG_DIR/opt/8821cs/enable_8821cs.sh
+install -m 0755 $FEATURES_DIR/fwinstaller_viomi/disable_8821cs.sh $IMG_DIR/opt/8821cs/disable_8821cs.sh
+
+#install -m 0755 $FEATURES_DIR/fwinstaller_viomi/net-rtl8821cs $IMG_DIR/etc/modules.d/net-rtl8821cs
+#install -m 0755 $FEATURES_DIR/fwinstaller_viomi/rmwm.sh $IMG_DIR/bin/rmwm.sh
+#install -m 0755 $FEATURES_DIR/fwinstaller_viomi/inswm.sh $IMG_DIR/bin/inswm.sh
+#install -m 0755 $FEATURES_DIR/fwinstaller_viomi/reboot $IMG_DIR/sbin/reboot
+
+#sed -i -E 's/rmmod 8189es/\/bin\/rmwm.sh/g' $IMG_DIR/usr/sbin/log*
+#sed -i -E 's/insmod 8189es/\/bin\/inswm.sh/g' $IMG_DIR/usr/sbin/log*
+#sed -i -E 's/rmmod 8189es/\/bin\/rmwm.sh/g' $IMG_DIR/usr/sbin/RobotApp*
+#sed -i -E 's/insmod 8189es/\/bin\/inswm.sh/g' $IMG_DIR/usr/sbin/RobotApp*
+#sed -i -E 's/rmmod 8189es/\/bin\/rmwm.sh/g' $IMG_DIR/usr/sbin/wifi*
+#sed -i -E 's/insmod 8189es/\/bin\/inswm.sh/g' $IMG_DIR/usr/sbin/wifi*
+#sed -i -E 's/rmmod 8189es/\/bin\/rmwm.sh/g' $IMG_DIR/usr/bin/mac*
+#sed -i -E 's/insmod 8189es/\/bin\/inswm.sh/g' $IMG_DIR/usr/bin/mac*
+#sed -i -E 's/rmmod 8189es/\/bin\/rmwm.sh/g' $IMG_DIR/bin/wifi*
+#sed -i -E 's/insmod 8189es/\/bin\/inswm.sh/g' $IMG_DIR/bin/wifi*
+#sed -i -E 's/insmod \/lib\/modules\/3.4.39\/8189es/\/bin\/inswm.sh \/lib\/modules\/3.4.39/g' $IMG_DIR/bin/wifi*
+
+
+echo "built with dustbuilder (https://builder.dontvacuum.me)" >> $IMG_DIR/etc/banner
+date -u +"%Y-%m-%dT%H:%M:%SZ"  >> $IMG_DIR/etc/banner
+echo "" >> $IMG_DIR/etc/banner
+
+if [ -f $FLAG_DIR/patch_dns ]; then
+	# Set system timezone to UTC
+	sed -i "s/option[[:space:]]\+timezone[[:space:]]\+Asia\/Shanghai/option timezone Etc\/UTC/g" $IMG_DIR/etc/config/system
+	sed -i "s/option[[:space:]]\+timezone[[:space:]]\+CST-8/option timezone UTC/g" $IMG_DIR/etc/config/system
+
+	# Disable firmware ntp client
+	sed -i "s/option[[:space:]]\+enable[[:space:]]\+1/option enable 0/g" $IMG_DIR/etc/config/system
+
+	# Set language to EN
+	sed -i "s/languageType=1/languageType=2/g" $IMG_DIR/etc/sysconf/sysConfig.ini
+
+	# Patch miio_client and add hostsfile redirect
+	sed -i -E 's/110.43.0.83/127.000.0.1/g' $IMG_DIR/usr/bin/miio_client
+	sed -i -E 's/110.43.0.85/127.000.0.1/g' $IMG_DIR/usr/bin/miio_client
+	rm $IMG_DIR/etc/hosts
+	cat $FEATURES_DIR/valetudo/deployment/etc/hosts-local > $IMG_DIR/etc/hosts
+fi
+
 
 echo "finished patching, repacking"
 
@@ -173,20 +221,41 @@ fi
 
 if [ -f $FLAG_DIR/diff ]; then
 	mkdir $BASE_DIR/original
-	tar -xzvf $BASE_DIR/upd_viomi.vacuum.v6.bin -C $BASE_DIR/original/
+	tar -xzvf $BASE_DIR/upd_viomi.bin -C $BASE_DIR/original/
 	tar -xzvf $BASE_DIR/original/CRL200S-OTA/target_sys.tar.gz -C $BASE_DIR/original/CRL200S-OTA/
 	unsquashfs -d $BASE_DIR/original/CRL200S-OTA/target_sys/squashfs-root $BASE_DIR/original/CRL200S-OTA/target_sys/rootfs.img
 	rm -rf $BASE_DIR/original/CRL200S-OTA/target_sys/squashfs-root/dev
 	rm -rf $BASE_DIR/original/CRL200S-OTA/ramdisk_sys*
 
 	mkdir $BASE_DIR/modified
-        mkdir -p $BASE_DIR/modified/CRL200S-OTA/target_sys/
-	unsquashfs -d $BASE_DIR/modified/CRL200S-OTA/target_sys/squashfs-root $BASE_DIR/CRL200S-OTA/target_sys/rootfs.img
+    mkdir -p $BASE_DIR/modified/CRL200S-OTA/
+	tar xvf $BASE_DIR/CRL200S-OTA/target_sys.tar.gz -C $BASE_DIR/modified/CRL200S-OTA/
+	unsquashfs -d $BASE_DIR/modified/CRL200S-OTA/target_sys/squashfs-root $BASE_DIR/modified/CRL200S-OTA/target_sys/rootfs.img
 	rm -rf $BASE_DIR/modified/CRL200S-OTA/target_sys/squashfs-root/dev
 
 	/usr/bin/git diff --no-index $BASE_DIR/original/ $BASE_DIR/modified/ > $BASE_DIR/output/diff.txt
 	rm -rf $BASE_DIR/original
 	rm -rf $BASE_DIR/modified
+fi
+
+if [ -f $FLAG_DIR/installer ]; then
+	mkdir $BASE_DIR/installer_repack
+	mv $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/installer_repack
+	tar xzvf $BASE_DIR/installer_repack/${DEVICETYPE}_fw.tar.gz -C $BASE_DIR/installer_repack
+	tar xzvf $BASE_DIR/installer_repack/CRL200S-OTA/target_sys.tar.gz -C $BASE_DIR/installer_repack
+	mv $BASE_DIR/installer_repack/target_sys/ $BASE_DIR/installer_repack/work/
+    install -m 0755 $FEATURES_DIR/fwinstaller_viomi/_root.sh.tpl $BASE_DIR/installer_repack/work/_root.sh.tpl
+	install -m 0755 $FEATURES_DIR/fwinstaller_viomi/install.sh $BASE_DIR/installer_repack/work/install.sh
+	chmod +x $BASE_DIR/installer_repack/work/install.sh
+
+	cd $BASE_DIR/installer_repack/work/
+	md5sum *.img > firmware.md5sum
+	cd ../..
+
+	tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz -C $BASE_DIR/installer_repack/work/ .
+	md5sum $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz > $BASE_DIR/output/md5.txt
+
+	rm -rf $BASE_DIR/installer_repack
 fi
 
 touch $BASE_DIR/output/done

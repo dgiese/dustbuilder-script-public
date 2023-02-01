@@ -61,9 +61,11 @@ unzip $BASE_DIR/update.zip
 rm $BASE_DIR/update.zip
 unsquashfs -d $IMG_DIR $BASE_DIR/rootfs.img
 if [ -f $BASE_DIR/rootfs.img.vanilla ]; then
+	echo "moving vanilla image to template"
 	mv $BASE_DIR/rootfs.img.vanilla $BASE_DIR/rootfs.img.template
 	rm $BASE_DIR/rootfs.img
 else
+	echo "moving rootfs to template"
 	mv $BASE_DIR/rootfs.img $BASE_DIR/rootfs.img.template
 fi
 if [ -f $BASE_DIR/mcu.bin ]; then
@@ -144,7 +146,10 @@ fi
 
 echo "backdooring"
 sed -i -E 's/::respawn:\/usr\/bin\/getty.sh//g' $IMG_DIR/etc/inittab
-sed -i -E 's/Put a getty on the serial port/\n::respawn:-\/bin\/sh/g' $IMG_DIR/etc/inittab
+sed -i -E 's/Put a getty on the serial port/\n::respawn:-\/sbin\/getty -n -l \/bin\/dustshell 115200 -L ttyS0/g' $IMG_DIR/etc/inittab
+echo -e "#!/bin/sh\n/bin/login -f root" > $IMG_DIR/bin/dustshell
+chmod +x $IMG_DIR/bin/dustshell
+
 
 if [ -f $FLAG_DIR/valetudo ]; then
 	echo "copy valetudo"
@@ -197,13 +202,21 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 		if [ $? -eq 1 ]; then
 			# Downgrade the helper
 			install -m 0755 $FEATURES_DIR/miio_clients/dreame_4.1.8_aarch64/miio_client_helper_nomqtt.sh $IMG_DIR/usr/bin
-			### Dreame tries to add some dm crypt stuff and we need to make some non-compatible robots compatible with the 4.1.8 miio helper
-			grep "DM_FLAG" $IMG_DIR/usr/bin/config
-			if [ $? -eq 1 ]; then
-				sed -i '1s/^/DM_FLAG=\/mnt\/misc\/dm\n/' $IMG_DIR/usr/bin/config
-			fi
 		fi
 	fi
+
+        ### Dreame tries to add some dm crypt stuff and we need to make some non-compatible robots compatible with the 4.1.8 miio helper
+        grep "DM_FLAG" $IMG_DIR/usr/bin/config
+        if [ $? -eq 1 ]; then
+                sed -i '1s/^/DM_FLAG=\/mnt\/misc\/dm\n/' $IMG_DIR/usr/bin/config
+        fi
+
+	### Some dreames may also act as a BLE gateway with the stock firmware (e.g P2148)
+        if [ -f $IMG_DIR/etc/init.d/ble.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/init.d/ble.sh
+        fi
+
+
 	
 	if [ ! -f $IMG_DIR/usr/lib/libjson-c.so.2 ]; then
 		install -m 0755 $FEATURES_DIR/miio_clients/3.5.8_aarch64.lib/* $IMG_DIR/usr/lib
@@ -217,6 +230,9 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 	sed -i 's/-oDISABLE_PSM//' $IMG_DIR/etc/rc.d/miio.sh
 	sed -i 's/set_change_user() {/set_change_user() { \n     return 0\n/' $IMG_DIR/ava/script/msg_cvt.sh
 	sed -i "s/307545464D4D757233624A4261696A7A\"/307545464D4D757233624A4261696A7A\"\n    avacmd msg_cvt '{\"type\":\"msgCvt\",\"cmd\":\"nation_matched\",\"result\":\"matched\"}' \&\n    return 0\n/" $IMG_DIR/ava/script/msg_cvt.sh
+	
+	#Disable encryption of FDS uploads (if enabled)
+	sed -i -E 's/ENC_FILE=yes/ENC_FILE=nah/g' $IMG_DIR/ava/lib/*
 	
 fi
 
@@ -271,8 +287,8 @@ if [ -f $FEATURES_DIR/fwinstaller_1t/sanitize.sh ]; then
 fi
 
 touch $IMG_DIR/build.txt
-echo "build with firmwarebuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
-date -u  >> $IMG_DIR/build.txt
+echo "built with dustbuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
+date -u +"%Y-%m-%dT%H:%M:%SZ"  >> $IMG_DIR/build.txt
 if [ -f $FLAG_DIR/version ]; then
     cat $FLAG_DIR/version >> $IMG_DIR/build.txt
 fi
@@ -335,9 +351,25 @@ elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2041" ]; then
     echo "p2041"
 	maximumsize=56000000
 	minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2148" ]; then
+    echo "p2148"
+	maximumsize=56000000
+	minimumsize=29000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2149" ]; then
     echo "p2149"
-	maximumsize=56000000
+	maximumsize=44000000
+	minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2114" ]; then
+    echo "p2114"
+        maximumsize=70000000
+        minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2250" ]; then
+    echo "r2250"
+        maximumsize=70000000
+        minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2228" ]; then
+    echo "r2228"
+	maximumsize=70000000
 	minimumsize=29000000
 else
 	echo "all others"
@@ -347,8 +379,8 @@ fi
 
 actualsize=$(wc -c < $BASE_DIR/rootfs.img)
 if [ "$actualsize" -gt "$maximumsize" ]; then
-        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash."
-        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash." > $BASE_DIR/output/error.txt
+        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash. $actualsize > $maximumsize"
+        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash. $actualsize > $maximumsize" > $BASE_DIR/output/error.txt
         echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
         echo $actualsize >> $BASE_DIR/output/error.txt
         echo $maximumsize >> $BASE_DIR/output/error.txt
