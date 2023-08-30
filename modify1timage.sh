@@ -151,6 +151,16 @@ echo -e "#!/bin/sh\n/bin/login -f root" > $IMG_DIR/bin/dustshell
 chmod +x $IMG_DIR/bin/dustshell
 
 
+rm $IMG_DIR/usr/bin/mount_partition.sh
+echo "" > $IMG_DIR/etc/mdev.conf
+if [[ ${FRIENDLYDEVICETYPE} == "dreame.vacuum.r"* || ${FRIENDLYDEVICETYPE} == "dreame.vacuum.p2114" ]]; then
+	echo "r device, sanitizing"
+	echo $(pwd)
+	export IMG_DIR=$IMG_DIR
+	$FEATURES_DIR/../features/fwinstaller_r/sanitize.sh
+fi
+
+
 if [ -f $FLAG_DIR/valetudo ]; then
 	echo "copy valetudo"
 	install -D -m 0755 $FEATURES_DIR/valetudo/valetudo-aarch64 $BASE_DIR/valetudo
@@ -214,6 +224,11 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 	### Some dreames may also act as a BLE gateway with the stock firmware (e.g P2148)
         if [ -f $IMG_DIR/etc/init.d/ble.sh ]; then
                 sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/init.d/ble.sh
+        fi
+
+	### This script is used for tracking
+        if [ -f $IMG_DIR/ava/script/curl_server.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/ava/script/curl_server.sh
         fi
 
 
@@ -328,7 +343,6 @@ fi
 echo "computing md5"
 md5sum $BASE_DIR/rootfs.img > $BASE_DIR/rootfs_md5sum
 cp parameter.txt parameter
-md5sum ./*.img > $BASE_DIR/firmware.md5sum
 
 echo "check image file size"
 if [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.mc1808" ]; then
@@ -359,23 +373,36 @@ elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2149" ]; then
     echo "p2149"
 	maximumsize=44000000
 	minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2150" ]; then
+    echo "p2150"
+	maximumsize=44000000
+	minimumsize=29000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2114" ]; then
     echo "p2114"
-        maximumsize=70000000
-        minimumsize=29000000
+	maximumsize=82000000
+	minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2104" ]; then
+    echo "r2104"
+	maximumsize=70000000
+	minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2240" ]; then
+    echo "r2240"
+	maximumsize=70000000
+	minimumsize=29000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2250" ]; then
     echo "r2250"
-        maximumsize=70000000
-        minimumsize=29000000
+	maximumsize=70000000
+	minimumsize=29000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2228" ]; then
     echo "r2228"
-	maximumsize=70000000
+	maximumsize=82000000
 	minimumsize=29000000
 else
 	echo "all others"
 	maximumsize=30000000
 	minimumsize=20000000
 fi
+
 
 actualsize=$(wc -c < $BASE_DIR/rootfs.img)
 if [ "$actualsize" -gt "$maximumsize" ]; then
@@ -396,44 +423,37 @@ if [ "$actualsize" -le "$minimumsize" ]; then
         exit 1
 fi
 
-	echo "create installer package"
-	install -m 0755 $FEATURES_DIR/fwinstaller_1t/install-mcufw.sh $BASE_DIR/install-mcufw.sh
-	if [ -f $FLAG_DIR/valetudo ]; then
-		sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install-val.sh > $BASE_DIR/install.sh
-		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
-		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install.sh
-		chmod +x install.sh
-		sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install-manual.sh > $BASE_DIR/install-manual.sh
-		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install-manual.sh
-		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install-manual.sh
-		chmod +x install-manual.sh
-		if [ -f $BASE_DIR/UI.bin ]; then
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl $BASE_DIR/ui_md5sum $BASE_DIR/UI.bin
-		elif [ -f $BASE_DIR/UIMA.bin ]; then
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl $BASE_DIR/ui_md5sum $BASE_DIR/UI*.bin
-		else
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl
-		fi
-	else
-		sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install.sh > $BASE_DIR/install.sh
-		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
-		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install.sh
-		chmod +x install.sh
-		sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install-manual.sh > $BASE_DIR/install-manual.sh
-		sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install-manual.sh
-		sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install-manual.sh
-		chmod +x install-manual.sh
-		if [ -f $BASE_DIR/UI.bin ]; then
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/ui_md5sum $BASE_DIR/UI.bin
-		elif [ -f $BASE_DIR/UIMA.bin ]; then
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/ui_md5sum $BASE_DIR/UI*.bin
-		else
-			tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh
-		fi
-	fi
-	md5sum $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz > $BASE_DIR/output/md5.txt
-	echo "${DEVICETYPE}_fw.tar.gz" > $BASE_DIR/filename.txt
-	touch $BASE_DIR/server.txt
+if [ -d $BASE_DIR/burnBL ]; then
+	cp $BASE_DIR/burnBL/*.* $BASE_DIR/
+fi
+
+if [ -d $BASE_DIR/patchBL ]; then
+	cp $BASE_DIR/patchBL/*.* $BASE_DIR/
+	install -m 0755 $FEATURES_DIR/patchBL_1t/patchBL.sh $BASE_DIR/patchBL.sh
+fi
+
+
+md5sum ./*.img > $BASE_DIR/firmware.md5sum
+
+echo "create installer package"
+install -m 0755 $FEATURES_DIR/fwinstaller_1t/install-mcufw.sh $BASE_DIR/install-mcufw.sh
+
+sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install.sh > $BASE_DIR/install.sh
+sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
+sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install.sh
+chmod +x install.sh
+
+sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_1t/install-manual.sh > $BASE_DIR/install-manual.sh
+sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install-manual.sh
+sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install-manual.sh
+chmod +x install-manual.sh
+
+tar -czf $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz $(ls $BASE_DIR/*.img $BASE_DIR/mcu_md5sum mcu.bin $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/install-manual.sh $BASE_DIR/install-mcufw.sh $BASE_DIR/valetudo $BASE_DIR/_root_postboot.sh.tpl $BASE_DIR/ui_md5sum $BASE_DIR/UI.bin $BASE_DIR/UI*.bin $BASE_DIR/patchBL.* 2>/dev/null)
+
+
+md5sum $BASE_DIR/output/${DEVICETYPE}_fw.tar.gz > $BASE_DIR/output/md5.txt
+echo "${DEVICETYPE}_fw.tar.gz" > $BASE_DIR/filename.txt
+touch $BASE_DIR/server.txt
 
 if [ -f $FLAG_DIR/diff ]; then
     echo "--------------"
@@ -452,6 +472,14 @@ if [ -f $FLAG_DIR/diff ]; then
 	rm $BASE_DIR/original/usr/bin/curl_download.sh
 	rm $BASE_DIR/original/usr/bin/curl_upload.sh
 	rm $BASE_DIR/original/usr/bin/packlog.sh
+
+	rm $BASE_DIR/original/usr/bin/mount_partition.sh
+	echo "" > $BASE_DIR/original/etc/mdev.conf
+	if [[ ${FRIENDLYDEVICETYPE} == "dreame.vacuum.r"* || ${FRIENDLYDEVICETYPE} == "dreame.vacuum.p2114" ]]; then
+		echo "r device, sanitizing"
+		$FEATURES_DIR/../features/fwinstaller_r/sanitize.sh
+	fi
+
 	sed -i "s/dibEPK917k/Gi29djChze/" $BASE_DIR/original/etc/*
 
 	/usr/bin/git diff --no-index $BASE_DIR/original/ $BASE_DIR/modified/ > $BASE_DIR/output/diff.txt

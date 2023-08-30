@@ -5,6 +5,7 @@
 BASE_DIR="."
 FLAG_DIR="."
 IMG_DIR="./squashfs-root"
+OPT_DIR="./squashfs-opt"
 FEATURES_DIR="./features"
 
 if [[ "$OSTYPE" != "linux-gnu"* ]]; then
@@ -57,6 +58,7 @@ mkdir -p $BASE_DIR/output
 
 unzip $BASE_DIR/firmware.zip
 mv $BASE_DIR/rootfs.img $BASE_DIR/rootfs.img.template
+mv $BASE_DIR/opt.img $BASE_DIR/opt.img.template
 COMPRESSION=$(unsquashfs -s $BASE_DIR/rootfs.img.template | grep 'Compression ' | sed 's/Compression //')
 echo "compression mode:"
 echo $COMPRESSION
@@ -64,7 +66,11 @@ if [ -z "$COMPRESSION" ]
 then
       COMPRESSION="gzip"
 fi
-unsquashfs -d $IMG_DIR $BASE_DIR/rootfs.img.template
+echo "unpacking rootfs"
+unsquashfs -no -d $IMG_DIR $BASE_DIR/rootfs.img.template
+echo "unpacking opt"
+unsquashfs -no -d $OPT_DIR $BASE_DIR/opt.img.template
+
 mkdir -p $IMG_DIR/etc/dropbear
 chown root:root $IMG_DIR/etc/dropbear
 cat $BASE_DIR/dropbear_rsa_host_key > $IMG_DIR/etc/dropbear/dropbear_rsa_host_key
@@ -73,12 +79,20 @@ cat $BASE_DIR/dropbear_ecdsa_host_key > $IMG_DIR/etc/dropbear/dropbear_ecdsa_hos
 cat $BASE_DIR/dropbear_ed25519_host_key > $IMG_DIR/etc/dropbear/dropbear_ed25519_host_key
 
 echo "disable SSH firewall rule"
-sed -i -e '/    iptables -I INPUT -j DROP -p tcp --dport 22/s/^/#/g' $IMG_DIR/opt/rockrobo/watchdog/rrwatchdoge.conf
-sed -i -E 's/dport 22/dport 29/g' $IMG_DIR/opt/rockrobo/watchdog/WatchDoge
-sed -i -E 's/dport 22/dport 29/g' $IMG_DIR/opt/rockrobo/rrlog/rrlogd
+sed -i -e '/    iptables -I INPUT -j DROP -p tcp --dport 22/s/^/#/g' $OPT_DIR/watchdog/rrwatchdoge.conf
+sed -i -E 's/dport 22/dport 29/g' $OPT_DIR/watchdog/WatchDoge
+sed -i -E 's/dport 22/dport 29/g' $OPT_DIR/rrlog/rrlogd
 
 echo "reverting rr_login"
-sed -i -E 's/::respawn:\/sbin\/rr_login -d \/dev\/ttyS0 -b 115200 -p vt100/::respawn:\/sbin\/getty -L ttyS0 115200 vt100/g' $IMG_DIR/etc/inittab
+#sed -i -E 's/::respawn:\/sbin\/rr_login -d \/dev\/ttyS0 -b 115200 -p vt100/::respawn:\/sbin\/getty -n -l \/sbin\/rr_login 115200 -L ttyS0/g' $IMG_DIR/etc/inittab
+sed -i -E 's/::respawn:\/sbin\/rr_login -d \/dev\/ttyS0 -b 115200 -p vt100/::respawn:\/bin\/sh/g' $IMG_DIR/etc/inittab
+install -m 0755 ./features/s8/busybox2 $IMG_DIR/bin/busybox2
+install -m 0755 ./features/s8/dmsetup $IMG_DIR/bin/dmsetup
+chmod +x $IMG_DIR/bin/busybox2
+cp ./features/s8/rr_login $IMG_DIR/sbin/rr_login
+chmod +x $IMG_DIR/sbin/rr_login
+ln -s /bin/busybox2 $IMG_DIR/sbin/getty
+ln -s /bin/busybox2 $IMG_DIR/bin/login
 
 echo "integrate SSH authorized_keys"
 mkdir $IMG_DIR/root/.ssh
@@ -89,110 +103,119 @@ chmod 600 $IMG_DIR/root/.ssh/authorized_keys
 chmod 600 $IMG_DIR/etc/dropbear/authorized_keys
 chown root:root $IMG_DIR/root -R
 
-if [ -f "$BASE_DIR/librrlocale.so" ]; then
-    echo "patch region signature checking"
-    install -m 0755 "$BASE_DIR/librrlocale.so" $IMG_DIR/opt/rockrobo/cleaner/lib/librrlocale.so
-fi
-
 echo "replacing dropbear"
+if [ -f $IMG_DIR/usr/bin/dropbear ]; then
+md5sum $IMG_DIR/usr/bin/dropbear
+install -m 0755 ./features/s8/dropbearmulti $IMG_DIR/usr/bin/dropbear
+ln -s /usr/bin/dropbear $IMG_DIR/usr/bin/dbclient
+ln -s /usr/bin/dropbear $IMG_DIR/usr/bin/scp
+md5sum $IMG_DIR/usr/bin/dropbear
+else
+md5sum $IMG_DIR/usr/bin/dropbear
+install -m 0755 ./features/s8/dropbearmulti $IMG_DIR/usr/sbin/dropbear
+ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/dbclient
+ln -s /usr/sbin/dropbear $IMG_DIR/usr/bin/scp
 md5sum $IMG_DIR/usr/sbin/dropbear
-install -m 0755 $FEATURES_DIR/dropbear_rr22/dropbear $IMG_DIR/usr/sbin/dropbear
-install -m 0755 $FEATURES_DIR/dropbear_rr22/dbclient $IMG_DIR/usr/bin/dbclient
-install -m 0755 $FEATURES_DIR/dropbear_rr22/dropbearkey $IMG_DIR/usr/bin/dropbearkey
-install -m 0755 $FEATURES_DIR/dropbear_rr22/scp $IMG_DIR/usr/bin/scp
-md5sum $IMG_DIR/usr/sbin/dropbear
-
-md5sum $IMG_DIR/opt/rockrobo/miio/miio_client
-if grep -q "ots_info_ack" $IMG_DIR/opt/rockrobo/miio/miio_client; then
-	echo "found OTS version of miio client, replacing it with 3.5.8"
-     cp $FEATURES_DIR/miio_clients/3.5.8/miio_client $IMG_DIR/opt/rockrobo/miio/miio_client
 fi
-md5sum $IMG_DIR/opt/rockrobo/miio/miio_client
+
+sed -i -E 's/SELINUX=enforcing/SELINUX=disabled/g' $IMG_DIR/etc/selinux/config
 
 
 if [ -f $FLAG_DIR/adbd ]; then
     echo "replace adbd"
-    install -m 0755 $FEATURES_DIR/adbd $IMG_DIR/usr/bin/adbd
+    #install -m 0755 $FEATURES_DIR/adbd $IMG_DIR/sbin/adbd
 fi
-
-echo "replace tcpdump"
-echo "#!/bin/sh" > $IMG_DIR/usr/sbin/tcpdump
-echo "exit 0" >> $IMG_DIR/usr/sbin/tcpdump
-
-
-#echo "install iptables modules"
-#    mkdir -p $IMG_DIR/lib/xtables/
-#    cp $FEATURES_DIR/iptables/xtables/*.* $IMG_DIR/lib/xtables/
-#    cp $FEATURES_DIR/iptables/ip6tables $IMG_DIR/sbin/
-
 
 if [ -f $FLAG_DIR/tools ]; then
     echo "installing tools"
-    cp -r $FEATURES_DIR/rr_tools/root-dir/* $IMG_DIR/
-fi
-
-# minimal tool package for S7 as the firmware is to fat
-if [ -f $FLAG_DIR/tools_min ]; then
-    echo "installing minimal tools"
-    cp -r $FEATURES_DIR/rr_tools_minimal/root-dir/* $IMG_DIR/
+    install -m 0755 ./features/s8/htop $IMG_DIR/usr/bin/htop
+	install -m 0755 ./features/s8/nano $IMG_DIR/usr/bin/nano
+	install -m 0755 ./features/s8/wget $IMG_DIR/usr/bin/wget
+	install -m 0755 ./features/s8/curl $IMG_DIR/usr/bin/curl
+	install -m 0755 ./features/s8/libncurses.so.5 $IMG_DIR/usr/lib/libncurses.so.5
+	
 fi
 
 if [ -f $FLAG_DIR/patch_logging ]; then
     echo "patch logging"
     echo "patch upload stuff"
     # UPLOAD_METHOD=0 (no upload)
-    sed -i -E 's/(UPLOAD_METHOD=)([0-9]+)/\10/' $IMG_DIR/opt/rockrobo/rrlog/rrlog.conf
-    sed -i -E 's/(UPLOAD_METHOD=)([0-9]+)/\10/' $IMG_DIR/opt/rockrobo/rrlog/rrlogmt.conf
+    sed -i -E 's/(UPLOAD_METHOD=)([0-9]+)/\10/' $OPT_DIR/rrlog/rrlog.conf
+    sed -i -E 's/(UPLOAD_METHOD=)([0-9]+)/\10/' $OPT_DIR/rrlog/rrlogmt.conf
 
     # Set LOG_LEVEL=3
-    sed -i -E 's/(LOG_LEVEL=)([0-9]+)/\13/' $IMG_DIR/opt/rockrobo/rrlog/rrlog.conf
-    sed -i -E 's/(LOG_LEVEL=)([0-9]+)/\13/' $IMG_DIR/opt/rockrobo/rrlog/rrlogmt.conf
+    sed -i -E 's/(LOG_LEVEL=)([0-9]+)/\13/' $OPT_DIR/rrlog/rrlog.conf
+    sed -i -E 's/(LOG_LEVEL=)([0-9]+)/\13/' $OPT_DIR/rrlog/rrlogmt.conf
 
     # Reduce logging of miio_client
-    sed -i 's/-l 2/-l 0/' $IMG_DIR/opt/rockrobo/watchdog/ProcessList.conf
+    sed -i 's/-l 2/-l 0/' $OPT_DIR/watchdog/ProcessList.conf
 
     # Let the script cleanup logs
-    sed -i 's/nice.*//' $IMG_DIR/opt/rockrobo/rrlog/tar_extra_file.sh
+    sed -i 's/nice.*//' $OPT_DIR/rrlog/tar_extra_file.sh
 
     # Disable collecting device info to /dev/shm/misc.log
-    sed -i '/^\#!\/bin\/bash$/a exit 0' $IMG_DIR/opt/rockrobo/rrlog/misc.sh
+    sed -i '/^\#!\/bin\/bash$/a exit 0' $OPT_DIR/rrlog/misc.sh
 
     # Disable logging of 'top'
-    sed -i '/^\#!\/bin\/bash$/a exit 0' $IMG_DIR/opt/rockrobo/rrlog/toprotation.sh
-    sed -i '/^\#!\/bin\/bash$/a exit 0' $IMG_DIR/opt/rockrobo/rrlog/topstop.sh
+    sed -i '/^\#!\/bin\/bash$/a exit 0' $OPT_DIR/rrlog/toprotation.sh
+    sed -i '/^\#!\/bin\/bash$/a exit 0' $OPT_DIR/rrlog/topstop.sh
     echo "patch watchdog log"
     # Disable watchdog log
     # shellcheck disable=SC2016
-    sed -i -E 's/\$RR_UDATA\/rockrobo\/rrlog\/watchdog.log/\/dev\/null/g' $IMG_DIR/opt/rockrobo/watchdog/rrwatchdoge.conf
+    sed -i -E 's/\$RR_UDATA\/rockrobo\/rrlog\/watchdog.log/\/dev\/null/g' $OPT_DIR/watchdog/rrwatchdoge.conf
 fi
 
 if [ -f $FLAG_DIR/patch_dns ]; then
+
+	md5sum $OPT_DIR/miio/miio_client
+	if grep -q "ots_info_ack" $OPT_DIR/miio/miio_client; then
+		echo "found OTS version of miio client, replacing it with 3.5.8"
+		 cp $FEATURES_DIR/miio_clients/3.5.8_aarch64/miio_client $OPT_DIR/miio/miio_client
+	fi
+	md5sum $OPT_DIR/miio/miio_client
+
+	if [ ! -f $IMG_DIR/usr/lib/libjson-c.so.2 ]; then
+		install -m 0755 $FEATURES_DIR/miio_clients/3.5.8_aarch64.lib/* $IMG_DIR/usr/lib
+	fi
+
+
 	echo "patching DNS"
-	sed -i -E 's/110.43.0.83/127.000.0.1/g' $IMG_DIR/opt/rockrobo/miio/miio_client
-	sed -i -E 's/110.43.0.85/127.000.0.1/g' $IMG_DIR/opt/rockrobo/miio/miio_client
-	sed -i 's/dport 22/dport 27/' $IMG_DIR/opt/rockrobo/watchdog/rrwatchdoge.conf
+	sed -i -E 's/110.43.0.83/127.000.0.1/g' $OPT_DIR/miio/miio_client
+	sed -i -E 's/110.43.0.85/127.000.0.1/g' $OPT_DIR/miio/miio_client
+	md5sum $IMG_DIR/usr/lib/libcurl.so.4.6.0
+    install -m 0755 ./features/s8/libcurl.so $IMG_DIR/usr/lib/libcurl.so.4.6.0
+	md5sum $IMG_DIR/usr/lib/libcurl.so.4.6.0
+	sed -i 's/dport 22/dport 27/' $OPT_DIR/watchdog/rrwatchdoge.conf
+	cat $FEATURES_DIR/nsswitch/nsswitch.conf > $IMG_DIR/etc/nsswitch.conf
 	cat $FEATURES_DIR/valetudo/deployment/etc/hosts-local > $IMG_DIR/etc/hosts
+	mkdir -p $IMG_DIR/etc/hosts-bind
+	mv $IMG_DIR/etc/hosts $IMG_DIR/etc/hosts-bind/
+	ln -s /etc/hosts-bind/hosts $IMG_DIR/etc/hosts
+
 fi
 
 if [ -f $FLAG_DIR/hostname ]; then
-echo "patching Hostname"
+	echo "patching Hostname"
 	cat $FLAG_DIR/hostname > $IMG_DIR/etc/hostname
 fi
 
-mkdir -p $IMG_DIR/etc/hosts-bind
-mv $IMG_DIR/etc/hosts $IMG_DIR/etc/hosts-bind/
-ln -s /etc/hosts-bind/hosts $IMG_DIR/etc/hosts
-
 sed -i "s/^exit 0//" $IMG_DIR/etc/rc.local
+echo "touch /tmp/_inside_etc_rc_local.txt" >>  $IMG_DIR/etc/rc.local
 echo "if [[ -f /mnt/reserve/_root.sh ]]; then" >> $IMG_DIR/etc/rc.local
 echo "    /mnt/reserve/_root.sh &" >> $IMG_DIR/etc/rc.local
 echo "fi" >> $IMG_DIR/etc/rc.local
 echo "exit 0" >> $IMG_DIR/etc/rc.local
 
-install -m 0755 $FEATURES_DIR/valetudo/deployment/S10rc_local_for_nand $IMG_DIR/etc/init/S10rc_local
+echo "installing rc.local links"
+install -m 0755 $FEATURES_DIR/valetudo/deployment/S10rc_local_for_nand $IMG_DIR/etc/init.d/S16rc_local
+ln -s ../init.d/S16rc_local $IMG_DIR/etc/rc.d/S95rc_local
 
-install -m 0755 $FEATURES_DIR/fwinstaller_nand/_root.sh.tpl $IMG_DIR/root/_root.sh.tpl
-install -m 0755 $FEATURES_DIR/fwinstaller_nand/how_to_modify.txt $IMG_DIR/root/how_to_modify.txt
+echo "just make sure to put us in the watchdoge startup"
+sed -i -E 's/echo \"startup rrwatchdoge...\"/sh \/etc\/rc.local \&\necho \"startup rrwatchdoge...\"/g' $IMG_DIR/usr/bin/start_rrwatchdoge.sh
+
+
+install -m 0755 ./features/fwinstaller_s8/_root.sh.tpl $IMG_DIR/root/_root.sh.tpl
+install -m 0755 ./features/fwinstaller_s8/how_to_modify.txt $IMG_DIR/root/how_to_modify.txt
 
 touch $IMG_DIR/build.txt
 echo "built with dustbuilder (https://builder.dontvacuum.me)" > $IMG_DIR/build.txt
@@ -203,30 +226,37 @@ fi
 echo "" >> $IMG_DIR/build.txt
 
 if [ -f $FLAG_DIR/jobmd5 ]; then
-        touch $IMG_DIR/dustbuilder.txt
-        cat $FLAG_DIR/version >> $IMG_DIR/dustbuilder.txt
-        echo "" >> $IMG_DIR/dustbuilder.txt
-        cat $FLAG_DIR/devicetypealias >> $IMG_DIR/dustbuilder.txt
-        echo "" >> $IMG_DIR/dustbuilder.txt
-        cat $FLAG_DIR/jobid >> $IMG_DIR/dustbuilder.txt
-        echo "" >> $IMG_DIR/dustbuilder.txt
-        cat $FLAG_DIR/jobkey >> $IMG_DIR/dustbuilder.txt
-        echo "" >> $IMG_DIR/dustbuilder.txt
-        cat $FLAG_DIR/jobmd5 >> $IMG_DIR/dustbuilder.txt
-        echo "" >> $IMG_DIR/dustbuilder.txt
+	touch $IMG_DIR/dustbuilder.txt
+	cat $FLAG_DIR/version >> $IMG_DIR/dustbuilder.txt
+	echo "" >> $IMG_DIR/dustbuilder.txt
+	cat $FLAG_DIR/devicetypealias >> $IMG_DIR/dustbuilder.txt
+	echo "" >> $IMG_DIR/dustbuilder.txt
+	cat $FLAG_DIR/jobid >> $IMG_DIR/dustbuilder.txt
+	echo "" >> $IMG_DIR/dustbuilder.txt
+	cat $FLAG_DIR/jobkey >> $IMG_DIR/dustbuilder.txt
+	echo "" >> $IMG_DIR/dustbuilder.txt
+	cat $FLAG_DIR/jobmd5 >> $IMG_DIR/dustbuilder.txt
+	echo "" >> $IMG_DIR/dustbuilder.txt
 fi
 
 echo "finished patching, repacking"
 
 mksquashfs $IMG_DIR/ rootfs_tmp.img -noappend -root-owned -comp $COMPRESSION -b 128k
-rm -rf $IMG_DIR
+#rm -rf $IMG_DIR
 dd if=$BASE_DIR/rootfs_tmp.img of=$BASE_DIR/rootfs.img bs=128k conv=sync
 rm $BASE_DIR/rootfs_tmp.img
+
+mksquashfs $OPT_DIR/ opt_tmp.img -noappend -root-owned -comp $COMPRESSION -b 256k
+#rm -rf $OPT_DIR
+dd if=$BASE_DIR/opt_tmp.img of=$BASE_DIR/opt.img bs=256k conv=sync
+rm $BASE_DIR/opt_tmp.img
 
 if [ -f $FLAG_DIR/vanilla ]; then
 	echo "vanilla mode, purge rootfs, use template"
 	rm $BASE_DIR/rootfs.img
+	rm $BASE_DIR/opt.img
 	cp $FLAG_DIR/rootfs.img.template $BASE_DIR/rootfs.img
+	cp $FLAG_DIR/opt.img.template $BASE_DIR/opt.img
 fi
 
 md5sum ./*.img > $BASE_DIR/firmware.md5sum
@@ -234,35 +264,22 @@ md5sum ./*.img > $BASE_DIR/firmware.md5sum
 
 
 echo "check image file size"
-# S5 Max
-if [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.s5e" ]; then
-	echo "s5e"
-	maximumsize=26214400
-	minimumsize=20000000
-# Roborock S6 Pure
-elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a08" ]; then
-    echo "a08"
-	maximumsize=24117248
-	minimumsize=10000000
-# Roborock S7
-elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a1[4|5]" ]; then
-    echo "a15"
-	maximumsize=24117248
-	minimumsize=19000000
-# Roborock S4 Max
-elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a19" ]; then
-    echo "a19"
-	maximumsize=24117248
-	minimumsize=19000000
-# Roborock Q7 Max
-elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a38" ]; then
-    echo "a38"
-        maximumsize=25117248 # partition size is 27262976
-        minimumsize=19000000
+# S8
+if [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a51" ]; then
+	echo "a51"
+	maximumsize=75000000
+	maximumsizeopt=85000000
+	minimumsize=35000000
+elif [ ${FRIENDLYDEVICETYPE} = "roborock.vacuum.a46" ]; then
+	echo "a46"
+	maximumsize=75000000
+	maximumsizeopt=85000000
+	minimumsize=35000000
 else
     echo "all others"
-	maximumsize=24117248
-	minimumsize=19000000
+	maximumsize=75000000
+	maximumsizeopt=85000000
+	minimumsize=35000000
 fi
 
 actualsize=$(wc -c < $BASE_DIR/rootfs.img)
@@ -284,12 +301,33 @@ if [ "$actualsize" -le "$minimumsize" ]; then
 	exit 1
 fi
 
-sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" $FEATURES_DIR/fwinstaller_nand/install.sh > $BASE_DIR/install.sh
+actualsize=$(wc -c < $BASE_DIR/opt.img)
+if [ "$actualsize" -gt "$maximumsizeopt" ]; then
+	echo "(!!!) opt.img looks to big. The size might exceed the available space on the flash."
+	echo "(!!!) opt.img looks to big. The size might exceed the available space on the flash." > $BASE_DIR/output/error.txt
+        echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
+	echo $actualsize >> $BASE_DIR/output/error.txt
+	echo $maximumsizeopt >> $BASE_DIR/output/error.txt
+	exit 1
+fi
+
+if [ "$actualsize" -le "$minimumsize" ]; then
+	echo "(!!!) opt.img looks to small. Maybe something went wrong with the image generation."
+        echo "(!!!) opt.img looks to small. Maybe something went wrong with the image generation." > $BASE_DIR/output/error.txt
+        echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
+        echo $actualsize >> $BASE_DIR/output/error.txt
+        echo $minimumsize >> $BASE_DIR/output/error.txt
+	exit 1
+fi
+
+sed "s/DEVICEMODEL=.*/DEVICEMODEL=\"${DEVICETYPE}\"/g" ./features/fwinstaller_s8/install.sh > $BASE_DIR/install.sh
 sed -i "s/# maxsizeplaceholder/maximumsize=${maximumsize}/g" $BASE_DIR/install.sh
 sed -i "s/# minsizeplaceholder/minimumsize=${minimumsize}/g" $BASE_DIR/install.sh
 chmod +x install.sh
-install -m 0755 $FEATURES_DIR/fwinstaller_nand/unsquashfs $BASE_DIR/unsquashfs
-tar -cvzf $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz $BASE_DIR/rootfs.img $BASE_DIR/boot.img $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/unsquashfs
+install -m 0755 ./features/fwinstaller_s8/unsquashfs $BASE_DIR/unsquashfs
+install -m 0755 ./features/s8/dmsetup $BASE_DIR/dmsetup
+install -m 0755 ./features/s8/busybox2 $BASE_DIR/busybox2
+tar -czf $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz $BASE_DIR/rootfs.img $BASE_DIR/opt.img $BASE_DIR/boot.img $BASE_DIR/firmware.md5sum $BASE_DIR/install.sh $BASE_DIR/unsquashfs $BASE_DIR/dmsetup $BASE_DIR/busybox2
 md5sum $BASE_DIR/output/${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz > $BASE_DIR/output/md5.txt
 echo "${FRIENDLYDEVICETYPE}_${version}_fw.tar.gz" > $BASE_DIR/filename.txt
 touch $BASE_DIR/server.txt

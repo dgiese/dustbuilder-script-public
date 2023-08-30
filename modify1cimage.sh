@@ -61,9 +61,11 @@ unzip $BASE_DIR/update.zip
 rm $BASE_DIR/update.zip
 unsquashfs -d $IMG_DIR $BASE_DIR/rootfs.img
 if [ -f $BASE_DIR/rootfs.img.vanilla ]; then
+	echo "moving vanilla image to template"										
 	mv $BASE_DIR/rootfs.img.vanilla $BASE_DIR/rootfs.img.template
 	rm $BASE_DIR/rootfs.img
 else
+	echo "moving rootfs to template"								 
 	mv $BASE_DIR/rootfs.img $BASE_DIR/rootfs.img.template
 fi
 if [ -f $BASE_DIR/mcu.bin ]; then
@@ -148,6 +150,8 @@ sed -i -E 's/Put a getty on the serial port/\n::respawn:-\/sbin\/getty -n -l \/b
 echo -e "#!/bin/sh\n/bin/login -f root" > $IMG_DIR/bin/dustshell
 chmod +x $IMG_DIR/bin/dustshell
 
+
+
 if [ -f $FLAG_DIR/valetudo ]; then
 	echo "copy valetudo"
 	install -D -m 0755 $FEATURES_DIR/valetudo/valetudo-armv7-lowmem $BASE_DIR/valetudo
@@ -205,6 +209,17 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 			fi
 		fi
 	fi
+
+	### Some dreames may also act as a BLE gateway with the stock firmware (e.g P2148)
+        if [ -f $IMG_DIR/etc/init.d/ble.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/init.d/ble.sh
+        fi
+
+        ### This script is used for tracking
+        if [ -f $IMG_DIR/ava/script/curl_server.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/ava/script/curl_server.sh
+        fi
+
 	
 	if [ ! -f $IMG_DIR/usr/lib/libjson-c.so.2 ]; then
 		install -m 0755 $FEATURES_DIR/miio_clients/3.5.8.lib/* $IMG_DIR/usr/lib
@@ -219,8 +234,8 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 	sed -i 's/set_change_user() {/set_change_user() { \n     return 0\n/' $IMG_DIR/ava/script/msg_cvt.sh
 	sed -i "s/307545464D4D757233624A4261696A7A\"/307545464D4D757233624A4261696A7A\"\n    avacmd msg_cvt '{\"type\":\"msgCvt\",\"cmd\":\"nation_matched\",\"result\":\"matched\"}' \&\n    return 0\n/" $IMG_DIR/ava/script/msg_cvt.sh
 
-        #Disable encryption of FDS uploads (if enabled)
-        sed -i -E 's/ENC_FILE=yes/ENC_FILE=nah/g' $IMG_DIR/ava/lib/*
+	#Disable encryption of FDS uploads (if enabled)
+	sed -i -E 's/ENC_FILE=yes/ENC_FILE=nah/g' $IMG_DIR/ava/lib/*
 fi
 
 if [ -f $FLAG_DIR/miio_target ]; then
@@ -315,6 +330,11 @@ fi
 echo "computing md5"
 md5sum $BASE_DIR/rootfs.img > $BASE_DIR/rootfs_md5sum
 cp parameter.txt parameter
+
+if [ -d $BASE_DIR/burnBL ]; then
+        cp $BASE_DIR/burnBL/*.* $BASE_DIR/
+fi
+
 md5sum ./*.img > $BASE_DIR/firmware.md5sum
 
 echo "check image file size"
@@ -322,12 +342,24 @@ if [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.mc1808" ]; then
 	echo "mc1808"
 	maximumsize=50000000
 	minimumsize=21000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.mb1808" ]; then
+    	echo "mb1808"
+	maximumsize=50000000
+	minimumsize=21000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2009" ]; then
     	echo "p2009"
 	maximumsize=30000000
 	minimumsize=20000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2027" ]; then
+	echo "p2027"
+        maximumsize=32000000
+        minimumsize=20000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2216" ]; then
 	echo "r2216"
+        maximumsize=50000000
+        minimumsize=29000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2257" ]; then
+	echo "r2257"
         maximumsize=50000000
         minimumsize=29000000
 else
@@ -338,8 +370,8 @@ fi
 
 actualsize=$(wc -c < $BASE_DIR/rootfs.img)
 if [ "$actualsize" -gt "$maximumsize" ]; then
-        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash."
-        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash." > $BASE_DIR/output/error.txt
+        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash. $actualsize > $maximumsize"
+        echo "(!!!) rootfs.img looks to big. The size might exceed the available space on the flash. $actualsize > $maximumsize" > $BASE_DIR/output/error.txt
         echo ${FRIENDLYDEVICETYPE} >> $BASE_DIR/output/error.txt
         echo $actualsize >> $BASE_DIR/output/error.txt
         echo $maximumsize >> $BASE_DIR/output/error.txt
@@ -402,7 +434,6 @@ if [ -f $FLAG_DIR/diff ]; then
 	echo "unpack modified"
 	unsquashfs -d $BASE_DIR/modified $BASE_DIR/rootfs.img
 	rm -rf $BASE_DIR/modified/dev
-
 	rm $BASE_DIR/original/etc/OTA_Key_pub.pem
 	rm $BASE_DIR/original/etc/adb_keys
 	rm $BASE_DIR/original/etc/publickey.pem
