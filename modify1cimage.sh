@@ -123,25 +123,83 @@ echo "fi" >> $IMG_DIR/etc/rc.sysinit
 
 if [ -f $FLAG_DIR/patch_dns ]; then
 
-#EXPERIMENT-disable-rsyslog: Prevents writing of some log files onto /data, which should increase NAND flash lifetime
-sed -i "s/rsyslogd/# rsyslogd/g" $IMG_DIR/etc/rc.d/rsyslog.sh
+	#EXPERIMENT-disable-rsyslog: Prevents writing of some log files onto /data, which should increase NAND flash lifetime
+	sed -i "s/rsyslogd/# rsyslogd/g" $IMG_DIR/etc/rc.d/rsyslog.sh
 
-#EXPERIMENT-monitor_cpu: Prevents writing of some log files onto /data, which should increase NAND flash lifetime
-sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/rc.d/monitor_cpu.sh
+	#EXPERIMENT-monitor_cpu: Prevents writing of some log files onto /data, which should increase NAND flash lifetime
+	sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/rc.d/monitor_cpu.sh
 
-#EXPERIMENT-disable_trans: No clue what this does, looks sketchy, might not be relevant for release fw
-sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/rc.d/msg_trans_monitor.sh
+	#EXPERIMENT-disable_trans: No clue what this does, looks sketchy, might not be relevant for release fw
+	sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/rc.d/msg_trans_monitor.sh
 
-#EXPERIMENT-redirect-miio-log: same as above. We move it to tmp and not tmp/log to prevent uploads
-sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/miio_monitor.sh
+	#EXPERIMENT-redirect-miio-log: same as above. We move it to tmp and not tmp/log to prevent uploads
+	sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/miio_monitor.sh
 
-#EXPERIMENT-redirect-miio-log: not sure if we actually need it or if we can remove the log
-sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/miio.sh
-sed -i "s/5242880/1048576/g" $IMG_DIR/etc/rc.d/miio.sh
+	#EXPERIMENT-redirect-miio-log: not sure if we actually need it or if we can remove the log
+	sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/miio.sh
+	sed -i "s/5242880/1048576/g" $IMG_DIR/etc/rc.d/miio.sh
 
-#EXPERIMENT-redirect-wifi-log: same as above. We move it to tmp and not tmp/log to prevent uploads
-#sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/wifi_monitor.sh
+	#EXPERIMENT-redirect-wifi-log: same as above. We move it to tmp and not tmp/log to prevent uploads
+	#sed -i "s/\/data\/log\//\/tmp\//g" $IMG_DIR/etc/rc.d/wifi_monitor.sh
 
+    if [ -f $IMG_DIR/usr/bin/dmio.sh ]; then
+        sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/usr/bin/dmio.sh
+    fi
+	
+	# privacy: video remote access
+	rm $IMG_DIR/etc/rc.d/video_streamer.sh
+	rm $IMG_DIR/etc/rc.d/monitor_video_streamer.sh
+	rm $IMG_DIR/etc/rc.d/restart_video_streamer.sh
+	rm $IMG_DIR/usr/bin/video_monitor
+	# loudspeakerservice.json needs to stay intact for sound to work on the l10spuh
+	rm $IMG_DIR/ava/conf/video_monitor/cedar* $IMG_DIR/ava/conf/video_monitor/recorder* $IMG_DIR/ava/conf/video_monitor/video_* $IMG_DIR/ava/conf/video_monitor/microphone*
+
+	sed -i "/\/etc\/rc.d\/create_agora_cert.sh/d" $IMG_DIR/etc/rc.sysinit
+	sed -i "/\/etc\/rc.d\/monitor_video_streamer.sh/d" $IMG_DIR/etc/rc.sysinit
+	sed -i "/video_monitor/d" $IMG_DIR/etc/rc.d/ava.sh
+
+    # privacy: speech recon and microphone stuff
+	rm -r $IMG_DIR/bdspeech
+	rm -r $IMG_DIR/speech
+	rm $IMG_DIR/usr/bin/speech_switch_type.sh
+	rm $IMG_DIR/usr/bin/reboot_monitor_bdspeech.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/usr/bin/speech_monitor.sh
+
+	sed -i "/\/usr\/bin\/speech_switch_type.sh/d" $IMG_DIR/etc/rc.sysinit
+	sed -i 's/\(.*MIC.*\) [0-9]*/\1 0/g' $IMG_DIR/etc/init.d/audio.sh
+
+
+	# privacy: telemetry stuff
+	ava_confs=("$IMG_DIR/ava/conf"/r*.conf)
+	if [ ${#ava_confs[@]} -gt 0 ]; then
+		ava_conf_filename="${ava_confs[0]}"
+
+		mv "$ava_conf_filename" "$ava_conf_filename.bak"
+		jq 'del(.nodes[] | select(.ID == "AvaNodeImpfileUpload"))' "$ava_conf_filename.bak" > $ava_conf_filename
+			rm "$ava_conf_filename.bak"
+	fi
+	sed -i 's/"upload_flag": true/"upload_flag": false/g' $IMG_DIR/ava/conf/bduploadfreq.json
+
+	rm $IMG_DIR/usr/bin/upload_file_ava
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/usr/bin/aimodels_hotupdate.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/usr/bin/dspmodel_hotupdate.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/usr/bin/check_silent_upgrade.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/matter.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/token.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/sys_monitor.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/monitor.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/wrapper_monitor.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/upload_file.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/QRPairHelper.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/msg_trans.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/msg_trans_monitor.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/mini_httpd.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/mi_tracking.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/rc.d/boa.sh
+	echo -e "#!/bin/sh\nexit 0" > $IMG_DIR/etc/init.d/wifi_ap_record.sh
+	sed -i '/check_silent_upgrade/d' $IMG_DIR/etc/crontabs/root
+	sed -i '/aimodels_hotupdate/d' $IMG_DIR/etc/crontabs/root
+	
 fi
 
 echo "backdooring"
@@ -194,7 +252,7 @@ if [ -f $FLAG_DIR/patch_dns ]; then
 	fi
 
 	
-	install -m 0755 $FEATURES_DIR/miio_clients/dreame_3.5.8/miio_client.patchedlimit $IMG_DIR/usr/bin/miio_client
+	install -m 0755 $FEATURES_DIR/miio_clients/dreame_3.5.8/miio_client.patchedlimit.nomdns $IMG_DIR/usr/bin/miio_client
 	### Downgrade the helper if we do not already have an older helper
 	grep "version: 4.1.6" $IMG_DIR/usr/bin/miio_client_helper_nomqtt.sh
 	if [ $? -eq 1 ]; then
@@ -214,13 +272,31 @@ if [ -f $FLAG_DIR/patch_dns ]; then
         if [ -f $IMG_DIR/etc/init.d/ble.sh ]; then
                 sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/etc/init.d/ble.sh
         fi
+        if [ -f $IMG_DIR/usr/bin/bt_init.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/usr/bin/bt_init.sh
+        fi
+        if [ -f $IMG_DIR/usr/bin/ble.sh ]; then
+                sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/usr/bin/ble.sh
+        fi
 
         ### This script is used for tracking
         if [ -f $IMG_DIR/ava/script/curl_server.sh ]; then
                 sed -i "s/source \/usr\/bin\/config/exit 0\nsource \/usr\/bin\/config/g" $IMG_DIR/ava/script/curl_server.sh
         fi
 
-	
+        ### While not a functional issue, this otherwise shows up as a resolved cloud domain
+        ### when people monitor their internal dns queries which paints a wrong impression
+        if [ -f $IMG_DIR/usr/bin/report_data.sh ]; then
+                sed -i "s/nslookup/echo/g" $IMG_DIR/usr/bin/report_data.sh
+        fi
+        if [ -f $IMG_DIR/usr/bin/record_events.sh ]; then
+                sed -i "s/nslookup/echo/g" $IMG_DIR/usr/bin/record_events.sh
+        fi
+        if [ -f $IMG_DIR/usr/bin/network_hook.sh ]; then
+                sed -i "s/\"iot_connected\" \]; then/\"iot_connected\" ]; then exit 0;/" $IMG_DIR/usr/bin/network_hook.sh
+                sed -i "s/\"iot_disconnected\" \]; then/\"iot_disconnected\" ]; then exit 0;/" $IMG_DIR/usr/bin/network_hook.sh
+        fi
+
 	if [ ! -f $IMG_DIR/usr/lib/libjson-c.so.2 ]; then
 		install -m 0755 $FEATURES_DIR/miio_clients/3.5.8.lib/* $IMG_DIR/usr/lib
 	fi
@@ -354,6 +430,10 @@ elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.p2027" ]; then
 	echo "p2027"
         maximumsize=32000000
         minimumsize=20000000
+elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2211" ]; then
+	echo "r2211"
+        maximumsize=50000000
+        minimumsize=29000000
 elif [ ${FRIENDLYDEVICETYPE} = "dreame.vacuum.r2216" ]; then
 	echo "r2216"
         maximumsize=50000000

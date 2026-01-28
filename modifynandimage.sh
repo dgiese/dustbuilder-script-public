@@ -93,6 +93,10 @@ if [ -f "$BASE_DIR/librrlocale.so" ]; then
     echo "patch region signature checking"
     install -m 0755 "$BASE_DIR/librrlocale.so" $IMG_DIR/opt/rockrobo/cleaner/lib/librrlocale.so
 fi
+if [ -f "$BASE_DIR/AppProxy" ]; then
+    echo "patch region lock"
+    install -m 0755 "$BASE_DIR/AppProxy" $IMG_DIR/opt/rockrobo/cleaner/bin/AppProxy
+fi
 
 echo "replacing dropbear"
 md5sum $IMG_DIR/usr/sbin/dropbear
@@ -104,8 +108,8 @@ md5sum $IMG_DIR/usr/sbin/dropbear
 
 md5sum $IMG_DIR/opt/rockrobo/miio/miio_client
 if grep -q "ots_info_ack" $IMG_DIR/opt/rockrobo/miio/miio_client; then
-	echo "found OTS version of miio client, replacing it with 3.5.8"
-     cp $FEATURES_DIR/miio_clients/3.5.8/miio_client $IMG_DIR/opt/rockrobo/miio/miio_client
+     echo "found OTS version of miio client, replacing it with 3.5.8"
+     install -m 0755 $FEATURES_DIR/miio_clients/3.5.8/miio_client.nomdns $IMG_DIR/opt/rockrobo/miio/miio_client
 fi
 md5sum $IMG_DIR/opt/rockrobo/miio/miio_client
 

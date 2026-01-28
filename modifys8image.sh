@@ -123,7 +123,8 @@ sed -i -E 's/SELINUX=enforcing/SELINUX=disabled/g' $IMG_DIR/etc/selinux/config
 
 if [ -f $FLAG_DIR/adbd ]; then
     echo "replace adbd"
-    #install -m 0755 $FEATURES_DIR/adbd $IMG_DIR/sbin/adbd
+    install -m 0755 $FEATURES_DIR/fwinstaller_s8/adbd.sh $IMG_DIR/usr/bin/adbd.sh
+    install -m 0755 $FEATURES_DIR/fwinstaller_s8/adbd $IMG_DIR/sbin/adbd
 fi
 
 if [ -f $FLAG_DIR/tools ]; then
